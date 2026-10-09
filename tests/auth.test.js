@@ -1,0 +1,9 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {isGoogleUser,signInGoogle,authErrorMessage} from '../dist/firebase-client.js';
+function session(user){const calls=[];const sdk={GoogleAuthProvider:class{setCustomParameters(value){calls.push(['parameters',value]);}},linkWithPopup:async(user)=>{calls.push(['link',user.uid]);return{user}},signInWithPopup:async()=>{calls.push(['signin']);return{user:{uid:'google-user'}}}};return{auth:{currentUser:user},sdk,calls};}
+test('only non-anonymous Google identities pass the dashboard gate',()=>{assert.equal(isGoogleUser(null),false);assert.equal(isGoogleUser({isAnonymous:true,providerData:[]}),false);assert.equal(!!isGoogleUser({isAnonymous:false,providerData:[{providerId:'password'}]}),false);assert.ok(isGoogleUser({isAnonymous:false,providerData:[{providerId:'google.com'}]}));});
+test('Google popup opens for a signed-out user with account selection',async()=>{const s=session(null);await signInGoogle(s);assert.deepEqual(s.calls,[['parameters',{prompt:'select_account'}],['signin']]);});
+test('anonymous workspace is upgraded by linking rather than abandoned',async()=>{const s=session({uid:'guest-uid',isAnonymous:true});await signInGoogle(s);assert.equal(s.calls[1][0],'link');assert.equal(s.calls[1][1],'guest-uid');});
+test('existing-account path requires explicit selection and uses normal sign-in',async()=>{const s=session({uid:'guest-uid',isAnonymous:true});await signInGoogle(s,{useExisting:true});assert.equal(s.calls[1][0],'signin');});
+test('blocked popup and disabled provider produce actionable messages',()=>{assert.match(authErrorMessage({code:'auth/popup-blocked'}),/Allow pop-ups/);assert.match(authErrorMessage({code:'auth/operation-not-allowed'}),/Enable it/);assert.match(authErrorMessage({code:'auth/unauthorized-domain'}),/Authorized domains/);});
